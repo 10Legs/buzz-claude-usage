@@ -6,7 +6,8 @@
 Listens on 127.0.0.1:8792 by default. Put HTTPS in front of it (for example Tailscale Serve).
 Every request needs `Authorization: Bearer <token>`.
 
-  GET /usage?days=N   usage report JSON for the last N days (1..max_days), cached for cache_seconds
+  GET /usage?days=N   usage report JSON for the last N days (1..max_days), cached for cache_seconds.
+                      With "plan_limits": true it also carries the 5-hour and weekly plan limits (see claude_limits.py).
   GET /healthz        "ok" (no token needed)
 
 Standard library only. It reads ~/.claude/projects and never writes anything.
@@ -17,6 +18,7 @@ from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from claude_usage_report import load_config, report  # noqa: E402
+from claude_limits import safe_fetch  # noqa: E402
 
 
 def load_token(cfg):
@@ -70,7 +72,7 @@ def make_handler(cfg, token):
                 hit = cache.get(days)
                 if not hit or time.time() - hit[0] > cfg["cache_seconds"]:
                     try:
-                        hit = cache[days] = (time.time(), json.dumps(report(cfg, days)).encode())
+                        hit = cache[days] = (time.time(), json.dumps(report(cfg, days, safe_fetch(cfg))).encode())
                     except Exception as e:  # report errors shouldn't kill the server
                         print(f"report failed: {e!r}", file=sys.stderr, flush=True)
                         return self._error(500, "report failed; see server log")

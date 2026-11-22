@@ -27,6 +27,8 @@ DEFAULTS = {
     "bind_host": "127.0.0.1",
     "port": 8792,
     "token_file": "token",
+    "plan_limits": False,
+    "credentials_file": None,
 }
 KEYS = ("input", "output", "cache_read", "cache_write")
 
@@ -115,7 +117,7 @@ def collect(cfg, days, now=None):
     for ts, proj, model, u in seen.values():
         if proj not in labels:
             labels[proj] = agent_for(proj, amap, cfg.get("unmatched_label", "(other)"))
-        rows.append(dict(day=ts.astimezone().strftime("%Y-%m-%d"), agent=labels[proj], model=model,
+        rows.append(dict(ts=ts, day=ts.astimezone().strftime("%Y-%m-%d"), agent=labels[proj], model=model,
                          input=u.get("input_tokens", 0) or 0, output=u.get("output_tokens", 0) or 0,
                          cache_read=u.get("cache_read_input_tokens", 0) or 0,
                          cache_write=u.get("cache_creation_input_tokens", 0) or 0))
@@ -137,11 +139,24 @@ def summarize(rows):
     return by_agent, by_day, by_agent_day
 
 
-def report(cfg, days):
-    """The JSON document served at GET /usage."""
-    by_agent, by_day, by_agent_day = summarize(collect(cfg, days))
-    return {"days": days, "generated": datetime.now().astimezone().isoformat(),
-            "by_agent": by_agent, "by_day": by_day, "by_agent_day": by_agent_day}
+def report(cfg, days, limits=None):
+    """The JSON document served at GET /usage.
+
+    `limits` (from claude_limits) adds the plan windows plus `session`: per-agent totals since the current
+    5-hour window began (its reset time minus 5 hours), so you can see who is spending the session.
+    """
+    rows = collect(cfg, days)
+    by_agent, by_day, by_agent_day = summarize(rows)
+    doc = {"days": days, "generated": datetime.now().astimezone().isoformat(),
+           "by_agent": by_agent, "by_day": by_day, "by_agent_day": by_agent_day}
+    if limits:
+        doc["limits"] = limits
+        five = limits.get("five_hour")
+        if five:
+            start = datetime.fromisoformat(five["resets_at"]) - timedelta(hours=5)
+            session_rows = [r for r in collect(cfg, 1) if r["ts"] >= start]  # a session is at most 5 hours old
+            doc["session"] = {"started": start.isoformat(), "by_agent": summarize(session_rows)[0]}
+    return doc
 
 
 def fmt(n):
