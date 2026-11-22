@@ -93,6 +93,8 @@ The server reads a JSON file. Point to it with the `CLAUDE_USAGE_CONFIG` environ
 | `cache_seconds` | `60` | How long a computed report is reused before the transcripts are read again. |
 | `bind_host` | `127.0.0.1` | Address to listen on. Keep it on localhost and put HTTPS in front. |
 | `port` | `8792` | Port to listen on. |
+| `plan_limits` | `false` | Optional. When `true`, `/usage` also returns your plan's 5-hour session and weekly limits and a per-agent breakdown of the current session. See [Plan limits](#plan-limits). |
+| `credentials_file` | `~/.claude/.credentials.json` | Where the Claude Code login lives, used only when `plan_limits` is on. |
 | `token_file` | `token` | File holding the access token, relative to the config file (or to the current directory when no config is set). Must contain at least 24 characters. |
 
 You can supply the token through the `CLAUDE_USAGE_TOKEN` environment variable instead of a file. It takes precedence over `token_file`.
@@ -236,10 +238,33 @@ journalctl --user -u claude-usage -f
 Run it as the user whose agents you want to measure. To keep it running after you log out, enable lingering:
 `loginctl enable-linger $USER`.
 
+## Plan limits
+
+Off by default. Token counts can't tell you how much of your plan is left, so with `"plan_limits": true` the server asks Anthropic for the
+account's limits and adds them to `/usage`:
+
+```json
+"limits":  { "five_hour": { "used_pct": 42.0, "resets_at": "2026-11-22T08:39:59+00:00" }, "seven_day": { "used_pct": 55.0, "resets_at": "..." } },
+"session": { "started": "2026-11-22T03:39:59+00:00", "by_agent": { "reviewer": { "output": 1200, "...": 0 } } }
+```
+
+The plugin shows two bars ("5-hour session" and "Weekly", with percent used and time to reset) and a "This session by agent" table.
+`session.by_agent` counts transcript tokens since the 5-hour window began (its reset time minus 5 hours).
+
+- **How it works.** It calls `https://api.anthropic.com/api/oauth/usage` with the Claude Code login token from `credentials_file`. That
+  endpoint is not documented and may change; when the call fails, `limits` is simply left out and the rest of the report still works.
+  The reason is logged (never the token).
+- **Account-wide.** The limits belong to the logged-in account, so they cover everything that account does, not just the agents you named.
+- **Token expiry.** Claude Code refreshes the login file while it runs. If the file's token has expired the server doesn't refresh it and
+  reports no limits until Claude Code has run again.
+- **Security.** This is the one place the server reads a credential. The token is held in memory for that call, never logged, written or
+  returned to the plugin. Turn it on only on a host where that is acceptable.
+
 ## Security model
 
 **What the server exposes:** agent names (from your config), daily token totals and message counts. It never sends prompts, responses,
-file contents, tool calls or model credentials, even though the transcripts it reads contain them.
+file contents, tool calls or model credentials, even though the transcripts it reads contain them. (With `plan_limits` on it reads the
+Claude login token to ask Anthropic for your limits, but still never returns it; see [Plan limits](#plan-limits).)
 
 **What the server enforces**
 

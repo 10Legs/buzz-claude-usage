@@ -11,6 +11,13 @@ function fmt(n) {
   return String(n);
 }
 
+function until(iso) {
+  const ms = new Date(iso).getTime() - Date.now();
+  if (!(ms > 0)) return "now";
+  const m = Math.round(ms / 60000), d = Math.floor(m / 1440), hr = Math.floor((m % 1440) / 60);
+  return d > 0 ? `${d}d ${hr}h` : hr > 0 ? `${hr}h ${m % 60}m` : `${m}m`;
+}
+
 export function apply(ctx) {
   const React = ctx.react;
   const h = React.createElement;
@@ -52,6 +59,15 @@ export function apply(ctx) {
     const cell = (v, right) => h("td", { style: { padding: "4px 8px", textAlign: right ? "right" : "left" } }, v);
     const th = (v, right) => h("th", { style: { padding: "4px 8px", textAlign: right ? "right" : "left" } }, v);
 
+    const limitBar = (label, w) => w && h("div", { key: label, style: { margin: "4px 0" } },
+      h("div", { style: { display: "flex", justifyContent: "space-between" } },
+        h("span", null, label), h("span", null, `${w.used_pct}% used · resets in ${until(w.resets_at)}`)),
+      h("div", { style: { height: "10px", background: "rgba(128,128,128,0.25)" } },
+        h("div", { style: { height: "10px", width: Math.min(100, w.used_pct) + "%", background: "currentColor", opacity: w.used_pct >= 90 ? 0.9 : 0.5 } })));
+    const session = data && data.session
+      ? Object.entries(data.session.by_agent).sort((a, b) => (b[1].output + b[1].cache_write) - (a[1].output + a[1].cache_write))
+      : [];
+
     const saveToken = () => { const t = draft.trim(); try { localStorage.setItem(TOKEN_KEY, t); } catch (e) { /* keep in memory only */ } setToken(t); setDraft(""); };
     const clearToken = () => { try { localStorage.removeItem(TOKEN_KEY); } catch (e) { /* ignore */ } setToken(""); setData(null); };
 
@@ -75,6 +91,14 @@ export function apply(ctx) {
         " ",
         h("button", { onClick: clearToken }, "Change token")),
       error && h("p", { role: "alert" }, `Couldn't load usage: ${error}`),
+      data && data.limits && h("h2", null, "Plan limits"),
+      data && data.limits && limitBar("5-hour session", data.limits.five_hour),
+      data && data.limits && limitBar("Weekly", data.limits.seven_day),
+      data && session.length > 0 && h("h2", null, "This session by agent"),
+      data && session.length > 0 && h("table", { style: { width: "100%", borderCollapse: "collapse" } },
+        h("thead", null, h("tr", null, th("Agent"), th("Msgs", true), th("Output", true), th("Cache write", true))),
+        h("tbody", null, session.map(([name, t]) =>
+          h("tr", { key: name }, cell(name), cell(fmt(t.messages), true), cell(fmt(t.output), true), cell(fmt(t.cache_write), true))))),
       data && h("h2", null, "By agent"),
       data && h("table", { style: { width: "100%", borderCollapse: "collapse" } },
         h("thead", null, h("tr", null, th("Agent"), th("Msgs", true), th("Output", true), th("Cache write", true), th("Cache read", true))),

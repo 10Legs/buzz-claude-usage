@@ -6,6 +6,7 @@ from http.server import ThreadingHTTPServer
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 import claude_usage_report as r  # noqa: E402
 import claude_usage_server as s  # noqa: E402
+import claude_limits as lim  # noqa: E402
 
 NOW = datetime.now(timezone.utc)
 
@@ -77,6 +78,35 @@ class ReportTests(Fixture):
         self.assertEqual(set(doc), {"days", "generated", "by_agent", "by_day", "by_agent_day"})
         day = next(iter(doc["by_day"]))
         self.assertEqual(doc["by_agent_day"][day]["alpha"]["cache_write"], 20)
+
+
+class LimitsTests(Fixture):
+    def test_parse_keeps_only_valid_windows(self):
+        doc = {"five_hour": {"utilization": 42.04, "resets_at": "2026-11-22T08:39:59+00:00"},
+               "seven_day": {"utilization": None, "resets_at": "2026-11-24T15:59:59+00:00"},
+               "seven_day_opus": {"utilization": 9, "resets_at": "2026-11-24T15:59:59+00:00"}}
+        self.assertEqual(lim.parse(doc), {"five_hour": {"used_pct": 42.0, "resets_at": "2026-11-22T08:39:59+00:00"}})
+        self.assertEqual(lim.parse(None), {})
+
+    def test_disabled_by_default_and_failures_return_nothing(self):
+        self.assertEqual(lim.safe_fetch({}), {})
+        self.assertEqual(lim.safe_fetch({"plan_limits": True, "credentials_file": os.path.join(self.tmp.name, "missing.json")}), {})
+
+    def test_expired_token_is_refused(self):
+        path = os.path.join(self.tmp.name, "c.json")
+        with open(path, "w") as f:
+            json.dump({"claudeAiOauth": {"accessToken": "t", "expiresAt": 1000}}, f)
+        with self.assertRaises(RuntimeError):
+            lim.fetch(path)
+
+    def test_report_adds_limits_and_session_by_agent(self):
+        resets = NOW + timedelta(hours=2)  # window began 3 hours ago
+        self.write("/srv/agents/alpha", [msg("in", NOW - timedelta(hours=1), out=7), msg("before", NOW - timedelta(hours=4), out=100)])
+        limits = {"five_hour": {"used_pct": 10.0, "resets_at": resets.isoformat()}}
+        doc = json.loads(json.dumps(r.report(self.cfg, 3, limits)))
+        self.assertEqual(doc["limits"], limits)
+        self.assertEqual(doc["session"]["by_agent"]["alpha"]["output"], 7)
+        self.assertNotIn("limits", r.report(self.cfg, 3))
 
 
 class ServerTests(Fixture):
