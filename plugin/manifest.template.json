@@ -1,0 +1,9 @@
+{
+  "id": "buzz.claude-usage",
+  "name": "Claude usage",
+  "apiVersion": 1,
+  "description": "Token usage of your Claude Code agents, by agent and by day (read-only).",
+  "host": {
+    "networkOrigins": []
+  }
+}

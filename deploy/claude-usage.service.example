@@ -1,0 +1,13 @@
+# systemd user unit. Copy to ~/.config/systemd/user/claude-usage.service, edit the two paths, then:
+#   systemctl --user daemon-reload && systemctl --user enable --now claude-usage
+# Run it as the same user whose ~/.claude/projects you want to report on.
+[Unit]
+Description=Claude Code usage server (read-only, localhost)
+
+[Service]
+Environment=CLAUDE_USAGE_CONFIG=/path/to/config.json
+ExecStart=/usr/bin/python3 /path/to/buzz-claude-usage/server/claude_usage_server.py
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

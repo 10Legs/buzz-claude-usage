@@ -1,0 +1,14 @@
+{
+  "projects_dir": "~/.claude/projects",
+  "agents": {
+    "docs-bot": "/srv/agents/docs-bot",
+    "reviewer": "/srv/agents/reviewer"
+  },
+  "launcher_glob": null,
+  "unmatched_label": "(other)",
+  "max_days": 60,
+  "cache_seconds": 60,
+  "bind_host": "127.0.0.1",
+  "port": 8792,
+  "token_file": "token"
+}
